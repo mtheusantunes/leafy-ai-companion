@@ -1,0 +1,47 @@
+# -----------------------------------------------------------------------------
+# Project: Leafy AI Companion
+# Author: Matheus Antunes Freire (github.com/mtheusantunes)
+# Copyright (c) 2026 Matheus Antunes Freire. All rights reserved.
+#
+# This file is part of the Leafy AI Companion project.
+# It is subject to the license terms in the LICENSE file found in the top-level
+# directory of this distribution. This software is licensed under the GNU GPLv3.
+# -----------------------------------------------------------------------------
+services:
+  weaviate:
+    command:
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8080'
+    - --scheme
+    - http
+    image: cr.weaviate.io/semitechnologies/weaviate:1.36.8
+    ports:
+    - 8080:8080
+    - 50051:50051
+    volumes:
+    - weaviate_data:/var/lib/weaviate
+    restart: on-failure:0
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      ENABLE_MODULES: 'text2vec-ollama,generative-ollama'
+      CLUSTER_HOSTNAME: 'node1'
+      OLLAMA_API_ENDPOINT: 'http://ollama:11434'
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:rocm # 1. Usar a imagem específica para GPUs AMD
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    devices:                  # 2. Dar acesso aos drivers da AMD no Ubuntu
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+volumes:
+  weaviate_data:
+  ollama_data:
