@@ -93,7 +93,7 @@ def processar_documento(caminho_arquivo: str, hash_arquivo: str) -> list[Documen
     print(f"Sucesso! PDF dividido em {len(documentos_seguros)} blocos contextuais seguros.")
     return documentos_seguros
 
-def salvar_documentos(documentos_langchain: list[Document], weaviate_cliente):
+def salvar_documentos(documentos_langchain: list[Document], cliente_weaviate):
     """
     Gera embeddings e persiste documentos no Weaviate.
 
@@ -103,7 +103,7 @@ def salvar_documentos(documentos_langchain: list[Document], weaviate_cliente):
 
     Args:
         documentos_langchain (list[Document]): Documentos a serem vetorizados.
-        weaviate_cliente: Cliente ativo do Weaviate já conectado.
+        cliente_weaviate: Cliente ativo do Weaviate já conectado.
 
     Returns:
         None
@@ -130,7 +130,7 @@ def salvar_documentos(documentos_langchain: list[Document], weaviate_cliente):
 
 if __name__ == "__main__":
     # Configurações iniciais da execução.
-    weaviate_cliente = None
+    cliente_weaviate = None
     pasta_documentos = "docs"
 
     if not os.path.exists(pasta_documentos):
@@ -150,10 +150,10 @@ if __name__ == "__main__":
 
     try:
         # Conecta ao Weaviate e coleta hashes já cadastrados.
-        weaviate_cliente = weaviate.connect_to_local()
+        cliente_weaviate = weaviate.connect_to_local()
         hashes_banco = set()
-        if weaviate_cliente.collections.exists("Documentos"):
-            colecao = weaviate_cliente.collections.get("Documentos")
+        if cliente_weaviate.collections.exists("Documentos"):
+            colecao = cliente_weaviate.collections.get("Documentos")
             agregacao = colecao.aggregate.over_all(group_by="hash_arquivo")
             hashes_banco = {
                 str(agrupamento.grouped_by.value)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                     print(f"Erro ao processar o arquivo {nome_arquivo}: {e}")
 
         if todos_documentos_processados:
-            salvar_documentos(todos_documentos_processados, weaviate_cliente)
+            salvar_documentos(todos_documentos_processados, cliente_weaviate)
         else:
             print(f"Base de dados já está em sincronia com a pasta '{pasta_documentos}/'")
 
@@ -186,6 +186,6 @@ if __name__ == "__main__":
 
     finally:
         # Garante o encerramento da conexão, mesmo em caso de erro.
-        if weaviate_cliente:
-            weaviate_cliente.close()
+        if cliente_weaviate:
+            cliente_weaviate.close()
             print("Conexão com o Weaviate encerrada.")
