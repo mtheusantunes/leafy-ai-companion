@@ -38,18 +38,31 @@ def gerar_hash_arquivo(caminho_arquivo):
     return sha256_hash.hexdigest() 
 
 def processar_documento(caminho_arquivo: str, hash_arquivo: str) -> list[Document]:
+    """
+    Converte um PDF em documentos LangChain prontos para vetorização.
+
+    O processamento acontece em duas etapas: primeiro gera chunks estruturais
+    com o Docling e depois aplica um splitter recursivo para reduzir riscos de
+    blocos muito grandes na etapa de embeddings.
+
+    Args:
+        caminho_arquivo (str): Caminho do arquivo PDF a ser processado.
+        hash_arquivo (str): Hash SHA-256 do arquivo, usado para sincronização.
+
+    Returns:
+        list[Document]: Lista de documentos LangChain com texto e metadados.
+    """
     print(f"Lendo e processando {caminho_arquivo}...")
-    conversor = DocumentConverter()
     
+    # Converte o PDF para a estrutura interna do Docling.
+    conversor = DocumentConverter()
     resultado = conversor.convert(caminho_arquivo)
     documento_docling = resultado.document
-    
     chunker = HierarchicalChunker()
-    
     chunks_docling = chunker.chunk(documento_docling)
-    
-    documentos_langchain = []
 
+    # Mapeia cada chunk para o formato Document do LangChain.
+    documentos_langchain = []
     for chunk in chunks_docling:
         texto = chunk.text
         item = chunk.meta.doc_items[0] if chunk.meta.doc_items else None
@@ -69,6 +82,7 @@ def processar_documento(caminho_arquivo: str, hash_arquivo: str) -> list[Documen
         documento_langchain = Document(page_content=texto, metadata=metadados)
         documentos_langchain.append(documento_langchain)
 
+    # Segunda camada de split para manter blocos em tamanho seguro.
     divisor = RecursiveCharacterTextSplitter(
         chunk_size=4000,
         chunk_overlap=400,
@@ -80,6 +94,21 @@ def processar_documento(caminho_arquivo: str, hash_arquivo: str) -> list[Documen
     return documentos_seguros
 
 def salvar_documentos(documentos_langchain: list[Document], weaviate_cliente):
+    """
+    Gera embeddings e persiste documentos no Weaviate.
+
+    Usa o modelo local de embeddings via Ollama e grava os vetores na coleção
+    Documentos_CEADi. Em caso de erro, registra a falha sem interromper o
+    fechamento da conexão no fluxo principal.
+
+    Args:
+        documentos_langchain (list[Document]): Documentos a serem vetorizados.
+        weaviate_cliente: Cliente ativo do Weaviate já conectado.
+
+    Returns:
+        None
+    """
+    # Configura o provedor de embeddings local.
     embeddings = OllamaEmbeddings(
         model="embeddinggemma:300m",
         base_url="http://localhost:11434"
@@ -100,6 +129,7 @@ def salvar_documentos(documentos_langchain: list[Document], weaviate_cliente):
         
 
 if __name__ == "__main__":
+    # Configurações iniciais da execução.
     weaviate_cliente = None
     pasta_documentos = "docs"
 
@@ -107,6 +137,8 @@ if __name__ == "__main__":
         print(f"Erro! A pasta '{pasta_documentos}' não foi encontrada.")
         exit(1)
 
+    # Cria o mapa hash -> arquivo para comparar pasta x banco. Objetivo é sincronizar o conteúdo da pasta com
+    # o do banco
     pdfs = [f for f in os.listdir(pasta_documentos) if f.lower().endswith('.pdf')]
     hashes_pasta = {}
     for pdf in pdfs:
@@ -117,6 +149,7 @@ if __name__ == "__main__":
     print(f"Encontrados {len(pdfs)} arquivos PDF. Iniciando processamento...")
 
     try:
+        # Conecta ao Weaviate e coleta hashes já cadastrados.
         weaviate_cliente = weaviate.connect_to_local()
         hashes_banco = set()
         if weaviate_cliente.collections.exists("Documentos"):
@@ -132,6 +165,7 @@ if __name__ == "__main__":
                     print(f"Removendo arquivo do banco não encontrado na pasta.")
                     colecao.data.delete_many(where=Filter.by_property("hash_arquivo").equal(hash_banco))
 
+        # Processa apenas PDFs novos (ainda não presentes no banco).
         todos_documentos_processados = []
         for hash_arquivo, nome_arquivo in hashes_pasta.items():
             if hash_arquivo not in hashes_banco:
@@ -151,6 +185,7 @@ if __name__ == "__main__":
         print(f"Falha na conexão ou operação com Weaviate: {e}")
 
     finally:
+        # Garante o encerramento da conexão, mesmo em caso de erro.
         if weaviate_cliente:
             weaviate_cliente.close()
             print("Conexão com o Weaviate encerrada.")
