@@ -30,8 +30,8 @@ def _configurar_retriever(cliente_weaviate):
 
     return vector_store.as_retriever(search_kwargs={"k": 4})
 
-def _criar_cadeia_rag(retriever):
-
+def _criar_cadeia_reformulacao():
+    
     llm = ChatOllama(
         model="llama3.1",
         base_url="http://localhost:11434",
@@ -57,6 +57,16 @@ def _criar_cadeia_rag(retriever):
     ])
 
     reformulacao_chain = prompt_memoria | llm | StrOutputParser()
+    return reformulacao_chain
+
+
+def _criar_cadeia_rag(retriever):
+
+    llm = ChatOllama(
+        model="llama3.1",
+        base_url="http://localhost:11434",
+        temperature=0.1
+    )
     
     template_final = """Você é um assistente virtual com acesso a base de conhecimento.
     Sua missão é auxiliar o usuário de forma acolhedora, ética, formal e prestativa.
@@ -80,7 +90,7 @@ def _criar_cadeia_rag(retriever):
         return "\n\n---\n\n".join(doc.page_content for doc in docs)
     
     rag_chain = (
-        {"contexto": reformulacao_chain | retriever | formatar_documentos, "pergunta": reformulacao_chain}
+        {"contexto": retriever | formatar_documentos, "pergunta": RunnablePassthrough()}
         | prompt_final
         | llm
         | StrOutputParser()
@@ -92,11 +102,38 @@ def consultar_base_conhecimento(pergunta: str, cliente_weaviate, historico: str)
     
     try:
         retriever = _configurar_retriever(cliente_weaviate)
+        cadeia_reformulacao = _criar_cadeia_reformulacao()
         cadeia_rag = _criar_cadeia_rag(retriever)
-        resposta_final = cadeia_rag.invoke({
-            "pergunta": pergunta,
-            "historico": historico
-        })
+
+        if historico.strip() == "":
+            pergunta_limpa = pergunta
+        else:
+            pergunta_limpa = cadeia_reformulacao.invoke({
+                "pergunta": pergunta,
+                "historico": historico
+            })
+        
+        print("\n[DEBUG RAG]")
+        print(f"Pergunta Original do Usuário: {pergunta}")
+        print(f"Pergunta Enviada ao Weaviate: {pergunta_limpa}\n")
+
+        print("\n[DEBUG RAG]")
+        print(f"Pergunta Original: {pergunta}")
+        
+        # ==========================================
+        # 2. O TESTE DEFINITIVO DO WEAVIATE
+        # ==========================================
+        print("--- INSPECIONANDO O BANCO DE DADOS ---")
+        docs_encontrados = retriever.invoke(pergunta_limpa)
+        print(f"O Weaviate devolveu {len(docs_encontrados)} blocos de texto:")
+        
+        for i, doc in enumerate(docs_encontrados):
+            # Imprime os primeiros 100 caracteres de cada documento que ele achou
+            texto_curto = doc.page_content[:1000].replace('\n', ' ')
+            print(f"Doc {i+1}: {texto_curto}...")
+        print("--------------------------------------\n")
+        
+        resposta_final = cadeia_rag.invoke(pergunta_limpa)
         return resposta_final
     except Exception as e:
         return f"Desculpe, ocorreu um erro interno ao consultar o banco de dados: {e}"
