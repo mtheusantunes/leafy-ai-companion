@@ -30,36 +30,6 @@ def _configurar_retriever(cliente_weaviate):
 
     return vector_store.as_retriever(search_kwargs={"k": 4})
 
-def _criar_cadeia_reformulacao():
-    
-    llm = ChatOllama(
-        model="llama3.1",
-        base_url="http://localhost:11434",
-        temperature=0.1
-    )
-    
-    template_memoria = """Você é um assistente de busca especialista em reformulação de texto.
-    Sua única tarefa é analisar o histórico da conversa e a nova pergunta do usuário.
-
-    REGRAS:
-    1. Se a nova pergunta for uma continuação do assunto (ex: "e a de Java?", "como funciona?"), reescreva a pergunta para que ela faça sentido de forma isolada, incluindo o sujeito e o contexto (ex: "Qual a carga horária da disciplina de Java?").
-    2. Se a nova pergunta já fizer sentido sozinha, apenas repita ela.
-    3. Se a nova pergunta for um texto sem sentido (ex: letras aleatórias, frases incompreensíveis) ou não possuir NENHUMA conexão lógica com o histórico, NÃO tente inventar sentido. Apenas retorne a pergunta original sem adições de contexto.
-    4. NÃO responda à pergunta do usuário, APENAS retorne a pergunta reescrita.
-
-    <historico>
-    {historico}
-    </historico>"""
-
-    prompt_memoria = ChatPromptTemplate.from_messages([
-        ("system", template_memoria),
-        ("human", "Nova Pergunta: <pergunta>\n{pergunta}\n</pergunta>\nPergunta Reescrita:")
-    ])
-
-    reformulacao_chain = prompt_memoria | llm | StrOutputParser()
-    return reformulacao_chain
-
-
 def _criar_cadeia_rag(retriever):
 
     llm = ChatOllama(
@@ -98,42 +68,13 @@ def _criar_cadeia_rag(retriever):
     
     return rag_chain
 
-def consultar_base_conhecimento(pergunta: str, cliente_weaviate, historico: str) -> str:
+def consultar_base_conhecimento(pergunta: str, cliente_weaviate) -> str:
     
     try:
         retriever = _configurar_retriever(cliente_weaviate)
-        cadeia_reformulacao = _criar_cadeia_reformulacao()
         cadeia_rag = _criar_cadeia_rag(retriever)
 
-        if historico.strip() == "":
-            pergunta_limpa = pergunta
-        else:
-            pergunta_limpa = cadeia_reformulacao.invoke({
-                "pergunta": pergunta,
-                "historico": historico
-            })
-        
-        print("\n[DEBUG RAG]")
-        print(f"Pergunta Original do Usuário: {pergunta}")
-        print(f"Pergunta Enviada ao Weaviate: {pergunta_limpa}\n")
-
-        print("\n[DEBUG RAG]")
-        print(f"Pergunta Original: {pergunta}")
-        
-        # ==========================================
-        # 2. O TESTE DEFINITIVO DO WEAVIATE
-        # ==========================================
-        print("--- INSPECIONANDO O BANCO DE DADOS ---")
-        docs_encontrados = retriever.invoke(pergunta_limpa)
-        print(f"O Weaviate devolveu {len(docs_encontrados)} blocos de texto:")
-        
-        for i, doc in enumerate(docs_encontrados):
-            # Imprime os primeiros 100 caracteres de cada documento que ele achou
-            texto_curto = doc.page_content[:1000].replace('\n', ' ')
-            print(f"Doc {i+1}: {texto_curto}...")
-        print("--------------------------------------\n")
-        
-        resposta_final = cadeia_rag.invoke(pergunta_limpa)
+        resposta_final = cadeia_rag.invoke(pergunta)
         return resposta_final
     except Exception as e:
         return f"Desculpe, ocorreu um erro interno ao consultar o banco de dados: {e}"
@@ -142,7 +83,6 @@ if __name__ == "__main__":
     print("Conectando ao banco de dados...")
     cliente_weaviate = weaviate.connect_to_local()
     
-    historico_terminal = []
     try:
         print("Iniciando o agente RAG")
         while True:
@@ -151,16 +91,10 @@ if __name__ == "__main__":
                 break
             
             print("Pensando...")
-            historico_texto = "\n".join(historico_terminal)
 
-            resposta = consultar_base_conhecimento(pergunta_usuario, cliente_weaviate, historico_texto)
+            resposta = consultar_base_conhecimento(pergunta_usuario, cliente_weaviate)
             print("Resposta da IA: ")
             print(resposta)
-
-            historico_terminal.append(f"Usuário: {pergunta_usuario}")
-            historico_terminal.append(f"Assistente: {resposta}")
-            if len(historico_terminal) > 8:
-                historico_terminal = historico_terminal[-8:]
     
     finally:
         cliente_weaviate.close()
