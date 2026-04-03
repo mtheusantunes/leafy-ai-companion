@@ -1,71 +1,103 @@
-docker instalado
+# ChatRAG - Assistente Virtual
 
-docker compose up -d
-chmod +x setup_modelos.sh
+Este projeto implementa uma arquitetura de Geração Aumentada por Recuperação (RAG) para atuar como um assistente virtual com acesso a uma base de conhecimento. A aplicação responde a dúvidas baseando-se estritamente em documentos adicionados à baseada de conhecimento em formato PDF, utilizando processamento de linguagem natural executado 100% localmente.
 
+## 1. Como Configurar e Executar o Ambiente
 
+O projeto é totalmente conteinerizado utilizando Docker. Siga os passos abaixo para iniciar a aplicação e baixar os modelos.
 
-Escolha: Llama3 e embeddinggemma:300m
+### 1.1 Pré-requisitos
+Antes de começar, certifique-se de ter os seguintes itens instalados e disponíveis no seu sistema:
+*   **Docker Desktop** (Windows/Mac) ou **Docker Engine + Docker Compose** (Linux).
+*   **Recursos de Hardware:** Como o sistema roda modelos de IA localmente, recomenda-se pelo menos **8 GB de RAM livres** (idealmente 16 GB) para garantir que o contêiner do Ollama consiga carregar o modelo `llama3.1` em memória sem travamentos.
+*   *(Opcional para aceleração por GPU Nvidia)*: Drivers da Nvidia atualizados e o [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) instalado para que o Docker reconheça a placa de vídeo.
+*   *(Opcional para aceleração por GPU AMD)*: Drivers ROCm instalados no sistema host.
 
+### 1.2. Subir os Contêineres (Escolha seu Perfil de Hardware)
+A arquitetura suporta perfis diferentes dependendo do seu hardware. No terminal, execute o comando correspondente à sua máquina:
 
-# Arquitetura e Decisões Técnicas: Módulo de Ingestão de Documentos
+*   **Para execução via dispositivo padrão (CPU, definido em .env):**
+    ```bash
+    docker compose up -d
+    ```
+*  **Para execução via CPU:**
+    ```bash
+    docker compose --profile cpu up -d
+    ```
+*   **Para execução via GPU Nvidia (CUDA):**
+    ```bash
+    docker compose --profile nvidia up -d
+    ```
+*   **Para execução via GPU AMD (ROCm):**
+    ```bash
+    docker compose --profile amd up -d
+    ```
 
-Este documento descreve as decisões de arquitetura, fluxo de processamento e limitações conhecidas do script de ingestão de PDFs (`carregar_documentos.py`) para o banco de dados vetorial do projeto ChatRAG.
+### 1.3. Baixar os Modelos de IA
+Com os contêineres rodando, faça o download dos modelos de LLM e de Embeddings no contêiner do Ollama. *(Nota: substitua `ollama-cpu` por `ollama-nvidia` ou `ollama-amd` se estiver usando aceleração gráfica)*:
 
----
-
-## 1. Visão Geral do Fluxo
-O módulo é responsável por ler documentos PDF em uma diretório local (`docs/`), fatiá-los de forma semântica, convertê-los em representações matemáticas (embeddings) e persisti-los no banco de dados vetorial Weaviate. O script foi projetado para ser **idempotente**, ou seja, pode ser rodado múltiplas vezes de forma segura, mantendo a pasta local e o banco de dados sempre sincronizados.
-
-## 2. Decisões Técnicas Adotadas
-
-### 2.1. Identidade Desacoplada da Localização (Hashing)
-* **Decisão:** Utilizamos um hash `SHA-256` gerado a partir dos bytes do arquivo como Identificador Único (ID) do documento, em vez do nome do arquivo ou do caminho da pasta.
-* **Justificativa:** Previne a duplicação de dados caso um arquivo seja renomeado ou movido de pasta. O sistema reconhece o conteúdo, não a casca.
-* **Implementação Técnica:** A leitura para a geração do hash é feita em blocos de 4KB (`f.read(4096)`), garantindo um uso de memória RAM extremamente baixo (O(1)), independentemente do tamanho do PDF.
-
-### 2.2. Sincronização Inteligente (State Matching)
-* **Decisão:** Antes de processar os PDFs, o script compara um "mapa de hashes" da pasta local contra os hashes já existentes no Weaviate.
-* **Justificativa:** 1. Evita o reprocessamento custoso (CPU/GPU) de documentos já vetorizados.
-  2. Identifica arquivos que foram deletados da pasta local e dispara comandos de exclusão (`delete_many`) no Weaviate, mantendo a base de conhecimento limpa (Prevenção de *Data Drift*).
-
-### 2.3. Estratégia de Chunking em Duas Etapas
-Enfrentamos o desafio de equilibrar a qualidade semântica dos cortes com os limites técnicos de hardware (Context Window). A solução adotada foi um pipeline de duas fases:
-1. **Corte Estrutural (Docling):** O `HierarchicalChunker` respeita a anatomia do PDF, agrupando textos com base em Títulos e Subtítulos. A proveniência do metadado da página é garantida extraindo o `page_no` do primeiro tijolo original (`chunk.meta.doc_items[0]`).
-2. **Corte de Segurança (LangChain):** Caso o Docling gere um bloco gigantesco (ex: um capítulo contínuo de 5 páginas sem títulos), aplicamos o `RecursiveCharacterTextSplitter` (limite de 4000 caracteres, overlap de 400).
-* **Justificativa:** Essa segunda etapa atua como uma "válvula de segurança", impedindo que textos massivos causem o erro `status code: 400 (context length exceeded)` no modelo do Ollama.
-
-### 2.4. Adoção do Modelo `EmbeddingGemma-300M`
-* **Decisão:** Migração do modelo `mxbai-embed-large` para o `google/embeddinggemma-300m` (via integração direta Hugging Face no Ollama).
-* **Justificativa:** O modelo Gemma entrega resultados no estado da arte (SoTA) para modelos abaixo de 500M de parâmetros, lidando excepcionalmente bem com a língua portuguesa e termos técnicos acadêmicos. Ele também oferece uma janela de contexto confortável de até 2048 tokens.
-
-### 2.5. Padrão EAFP (Tratamento de Erros)
-* **Decisão:** Uso rigoroso de `try/except` ao redor de operações de I/O de rede (comunicação com Docker/Weaviate/Ollama), combinado com `if/else` para lógica de negócios.
-* **Justificativa:** Evita que falhas na infraestrutura local (Ollama indisponível, Weaviate reiniciando) quebrem a execução do script abruptamente (evitando vazamento de conexões/sockets). O bloco `finally` garante o encerramento seguro do cliente Weaviate.
+```bash
+docker compose exec ollama-{seu_profile} ollama pull llama3.1
+docker compose exec ollama-{seu_profile} ollama pull embeddinggemma:300m
+```
 
 ---
 
-## 3. Limitações e Pontos de Atenção
+## 2. Ingerir e Vetorizar os Documentos
+ Para processar a base de conhecimento, coloque seus arquivos PDF na pasta `docs/`. Em seguida, execute o script de processamento de documentos dentro do contêiner da aplicação para ler, extrair textos e enviá-los ao banco de dados:
 
-Apesar da robustez, a arquitetura atual possui limitações mapeadas que devem ser consideradas para escalabilidade futura:
+```bash
+docker compose exec app python carregar_documentos.py
+```
 
-1. **Inflexibilidade de Dimensões (Mudança de Modelos de IA):**
-   * *Problema:* O Weaviate trava a dimensão dos vetores na criação da coleção. Se no futuro decidirmos mudar do `EmbeddingGemma-300M` (ex: 768 dimensões) para outro modelo com tamanho vetorial diferente, o banco recusará os dados.
-   * *Workaround atual:* É necessário rodar um script externo de "Hard Reset" para deletar a coleção `Documentos` inteira antes de iniciar a nova ingestão.
-
-2. **Dependência Crítica de Infraestrutura Local:**
-   * *Problema:* O script não possui *fallbacks* (plano B) na nuvem. Se os containers Docker do Ollama ou do Weaviate não estiverem rodando na porta correta, o processo falha inteiramente. 
-   * *Problema 2:* O Ollama exige que o modelo já tenha sido baixado no container (`docker exec [...] ollama pull ...`). O script Python não faz esse download automaticamente.
-
-3. **Processamento Sequencial (Gargalo de I/O):**
-   * *Problema:* O loop principal processa os PDFs um por vez de forma síncrona. 
-   * *Impacto:* Para lotes massivos de centenas de PDFs pesados, o tempo de ingestão será longo. Em arquiteturas futuras, pode-se avaliar a implementação de paralelismo (`asyncio` ou filas como Celery/RabbitMQ) para acelerar a vetorização.
+* **Obs:** O zip já acompanha alguns documentos de exemplo.
 
 ---
 
-## 4. Tecnologias e Bibliotecas Empregadas
-* **Linguagem:** Python 3.10+
-* **Extração PDF:** `docling` (DocumentConverter, HierarchicalChunker)
-* **Orquestração e Splitter:** `langchain` e `langchain_text_splitters`
-* **Integração de LLM Local:** `langchain_ollama`
-* **Vector Database:** `weaviate-client` v4 (via `langchain_weaviate`)
+## 3. Acessar a Interface Web
+Abra o seu navegador e acesse a interface interativa do chatbot em:
+**http://localhost:8501**
+
+---
+
+## 4. Decisões Técnicas e Arquitetura
+
+O sistema foi desenhado para atender aos requisitos do desafio, focando em otimização de recursos, modularidade e alta precisão na recuperação de informações. Abaixo, estão detalhadas as justificativas para as escolhas tecnológicas da arquitetura:
+
+### 4.1 Infraestrutura e Orquestração (Docker)
+*   **Isolamento e Leveza:** A aplicação web roda em uma imagem base otimizada (`python:3.12-slim`). Dependências de sistema (como `libgl1` e `tesseract-ocr`) foram injetadas cirurgicamente no *build* para suportar as bibliotecas de visão computacional do Docling sem inflar o contêiner.
+*   **Ambiente de Desenvolvimento Fluido:** O `docker-compose.yml` espelha o código via volumes locais para permitir atualizações em tempo real, mas utiliza volumes anônimos (`/app/venv` e `/app/__pycache__`) para isolar as dependências do contêiner do ambiente *host*, prevenindo conflitos de sistema operacional.
+*   **Agnosticismo de Hardware:** A arquitetura foi construída com *Docker Profiles*, permitindo que o mesmo código rode perfeitamente em máquinas limitadas (apenas CPU) ou tire proveito máximo de aceleração de hardware (Nvidia CUDA ou AMD ROCm) sem alterar uma linha de código.
+
+### 4.2 Ingestão Semântica e Chunking Híbrido
+O processamento de PDFs (documentos) é historicamente complexo devido a quebras de página, tabelas e cabeçalhos. Adotou-se uma estratégia de "Fatiamento Híbrido":
+*   **Fatiamento Semântico:** Em vez de cortar o texto cegamente por número de caracteres, utilizou-se o  `HierarchicalChunker` do Docling para ler a árvore estrutural do PDF. Ele agrupa o texto respeitando a hierarquia original do documento (capítulos, artigos, parágrafos), garantindo que o contexto não seja quebrado ao meio.
+*   **Camada de Segurança Vetorial (`RecursiveCharacterTextSplitter`):** Documentos podem conter capítulos massivos que, mesmo agrupados semanticamente, excedem a janela de contexto (limite de tokens) dos modelos de *embedding*. Para evitar a perda de dados por truncamento silencioso ou erros de inferência, aplicou-se uma segunda camada recursiva (tamanho máximo de 4000 caracteres com sobreposição de 400). Isso garante a integridade matemática da vetorização, mantendo todos os blocos em um tamanho seguro e altamente denso para a busca.
+
+### 4.3 Sincronização Inteligente de Arquivos
+A atualização da base de conhecimento foi projetada para ser tolerante a falhas, desacoplada e otimizada em consumo de memória:
+*   **Independência de Nomenclatura:** O sistema não confia em caminhos ou nomes de arquivos. Um *hash* criptográfico (SHA-256) é gerado a partir do conteúdo binário do PDF. Se um usuário renomear `Regulamento_v1.pdf` para `Regulamento_Final.pdf`, o sistema sabe que o conteúdo é idêntico e ignora o reprocessamento, economizando poder computacional.
+*   **Eficiência de Memória RAM:** A leitura para a geração do *hash* é feita em blocos (chunks) binários de 4KB. Isso significa que a aplicação pode ingerir PDFs de centenas de megabytes sem estourar a memória do contêiner.
+*   **Busca em Banco Otimizada:** Na etapa de sincronização, não são baixados os vetores do banco para comparar com a pasta. Utiliza-se uma consulta de agregação nativa do Weaviate (`aggregate.over_all(group_by="hash_arquivo")`) que retorna apenas um `Set` de hashes únicos. Como o cruzamento em memória é feito entre um `Set` e um Dicionário (Tabelas Hash), a complexidade algorítmica de verificação cai de $O(n^2)$ para $O(N)$, tornando a identificação de arquivos novos ou deletados eficiente.
+
+### 4.4 Modelos de Inteligência Artificial Locais
+A escolha da *stack* de IA priorizou o equilíbrio entre a qualidade das respostas e o peso do modelo na memória RAM/VRAM:
+*   **LLM de Inferência (`llama3.1 - 8B`):** Escolhido por ser um modelo de código aberto com ótimo custo-benefício na categoria de 8 bilhões de parâmetros. Ele possui um alinhamento excepcional para seguir instruções estritas, o que é vital para obedecer às nossas regras de "não alucinar". Além disso, possui suporte nativo e fluente ao Português do Brasil. Foi estabelecida a `temperature=0.1` para reduzir drasticamente a aleatoriedade, garantindo que o modelo seja analítico, conservador e produza respostas altamente consistentes e previsíveis.
+*   **Motor de Vetorização (`embeddinggemma:300m`):** Modelos de *embedding* gigantescos geram matrizes muito pesadas e lentas de consultar. O modelo da família Gemma com 300 milhões de parâmetros oferece um "ponto de equilíbrio" perfeito: é leve o suficiente para ser executado em CPUs comuns durante a ingestão de PDFs, mas denso o suficiente para capturar nuances semânticas complexas da língua portuguesa na hora da busca.
+
+### 4.5 Banco de Dados Vetorial (Weaviate)
+*   **Persistência:** O banco roda em seu próprio contêiner, com volumes montados garantindo que a base de dados não seja perdida ao reiniciar o servidor.
+*   **Gerenciamento de Estado no Streamlit:** O cliente do Weaviate é instanciado através do decorador `@st.cache_resource`. Isso mantém uma conexão de alta performance persistente no servidor, impedindo que o banco sofra ataques de conexões repetidas toda vez que o usuário envia uma nova mensagem no chat ou atualiza a página.
+
+### 4.6 Pipeline RAG e Prompting Restritivo
+*   **LCEL (LangChain Expression Language):** A cadeia de geração foi construída utilizando a arquitetura moderna de tubos (*pipes*) do LangChain. Isso garante um fluxo de dados tipado, assíncrono e nativamente compatível com *streaming* de respostas.
+*   **Protocolo Anti-Alucinação:** O prompt do sistema isola o contexto injetado dentro de *tags* XML (`<documentos_oficiais>`). O modelo `llama3.1` é condicionado a utilizar **exclusivamente** este escopo para compor a resposta, sendo programado com respostas padronizadas de recusa ("fallback") caso a pergunta escape do escopo ou contenha teor inapropriado. 
+
+---
+
+## 5. Limitações Conhecidas
+
+*   **Ausência de Memória Conversacional:** O pipeline do LangChain foi desenhado para processar consultas isoladas. Embora a interface gráfica do Streamlit exiba o histórico de chat na tela, as mensagens anteriores não são reinjetadas no *prompt* do LLM (não há uso de *Conversation Buffer Memory*). Portanto, o assistente responde sempre de forma independente à pergunta atual e não compreende perguntas de seguimento que dependam de contexto passado (ex: *"Pode me explicar melhor o item 2 da sua última resposta?"*).
+*   **Dependência de Hardware Local:** Como todo o processamento de inferência do LLM e a geração de embeddings (via Ollama) rodam localmente, o tempo de resposta do assistente está diretamente limitado à disponibilidade de memória RAM e VRAM (Placa de Vídeo) da máquina hospedeira.
+*   **Tempo de Ingestão de Documentos:** A biblioteca Docling é extremamente precisa para ler estruturas complexas de PDFs, mas seu processamento pode ser significativamente lento em documentos que contenham dezenas ou centenas de páginas, especialmente por estar configurado para usar a CPU para maior compatibilidade.
+*   **Contexto Fixo:** O pipeline do LangChain foi definido com uma restrição da busca vetorial a um número predefinido de trechos (`k=4`). Se a resposta a uma pergunta muito abrangente estiver fragmentada por muitas partes do documento, o assistente pode não recuperar todas as frações necessárias simultaneamente.
