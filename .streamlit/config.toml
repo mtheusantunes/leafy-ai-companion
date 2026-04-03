@@ -1,14 +1,12 @@
 [theme]
-# Cor principal (usada em botões de destaque, sliders e links)
+# Cor principal
 primaryColor = "#2F9E40"
 
-# Cor do fundo principal (onde fica o chat)
+# Cor do fundo principal
 backgroundColor = "#E7EAED"
-
-# Cor do fundo secundário (usada na barra lateral e caixas de texto)
 
 # Cor do texto principal
 textColor = "#000000"
 
-# Fonte do sistema (Opções: "sans serif", "serif", "monospace")
+# Fonte do sistema
 font = "sans serif"
