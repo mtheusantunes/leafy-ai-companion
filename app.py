@@ -32,7 +32,14 @@ st.markdown("""
 @st.cache_resource
 def iniciar_conexao_banco():
     try:
-        cliente_weaviate = weaviate.connect_to_local()
+        cliente_weaviate = weaviate.connect_to_custom(
+            http_host="weaviate",
+            http_port=8080,
+            http_secure=False,
+            grpc_host="weaviate",
+            grpc_port=50051,
+            grpc_secure=False
+        )
         return cliente_weaviate
     except Exception as e:
         st.error(f"Falha ao conectar no banco de dados vetorial: {e}")

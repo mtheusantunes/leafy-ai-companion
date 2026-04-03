@@ -18,7 +18,7 @@ def _configurar_retriever(cliente_weaviate):
 
     embeddings = OllamaEmbeddings(
         model="embeddinggemma:300m",
-        base_url="http://localhost:11434"
+        base_url="http://ollama:11434"
     )
 
     vector_store = WeaviateVectorStore(
@@ -34,7 +34,7 @@ def _criar_cadeia_rag(retriever):
 
     llm = ChatOllama(
         model="llama3.1",
-        base_url="http://localhost:11434",
+        base_url="http://ollama:11434",
         temperature=0.1
     )
     
@@ -81,7 +81,14 @@ def consultar_base_conhecimento(pergunta: str, cliente_weaviate) -> str:
 
 if __name__ == "__main__":
     print("Conectando ao banco de dados...")
-    cliente_weaviate = weaviate.connect_to_local()
+    cliente_weaviate = weaviate.connect_to_custom(
+        http_host="weaviate",
+        http_port=8080,
+        http_secure=False,
+        grpc_host="weaviate",
+        grpc_port=50051,
+        grpc_secure=False
+    )
     
     try:
         print("Iniciando o agente RAG")

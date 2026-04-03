@@ -108,10 +108,10 @@ def salvar_documentos(documentos_langchain: list[Document], cliente_weaviate):
     Returns:
         None
     """
-    # Configura o provedor de embeddings local.
+    # Configura o provedor de embeddings
     embeddings = OllamaEmbeddings(
         model="embeddinggemma:300m",
-        base_url="http://localhost:11434"
+        base_url="http://ollama:11434"
     )
 
     try:
@@ -150,7 +150,15 @@ if __name__ == "__main__":
 
     try:
         # Conecta ao Weaviate e coleta hashes já cadastrados.
-        cliente_weaviate = weaviate.connect_to_local()
+        cliente_weaviate = weaviate.connect_to_custom(
+            http_host="weaviate",
+            http_port=8080,
+            http_secure=False,
+            grpc_host="weaviate",
+            grpc_port=50051,
+            grpc_secure=False
+        )
+        
         hashes_banco = set()
         if cliente_weaviate.collections.exists("Documentos"):
             colecao = cliente_weaviate.collections.get("Documentos")
