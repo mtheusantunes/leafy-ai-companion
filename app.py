@@ -18,7 +18,16 @@ st.set_page_config(
 )
 
 st.title("📚 Assistente Virtual")
-st.markdown("Faça perguntas sobre os documentos da base de conhecimento.")
+st.markdown("""
+            <style>
+            [data-testid="stChatMessageAvatarAssistant"] {
+                background-color: #C8191E;
+            }
+            [data-testid="stChatMessageAvatarUser"] {
+                background-color: #2F9E40;
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
 @st.cache_resource
 def iniciar_conexao_banco():
@@ -48,15 +57,10 @@ if pergunta := st.chat_input("Digite sua pergunta sobre os regulamentos..."):
     
     with st.chat_message("assistant"):
         with st.spinner("Consultando a base de conhecimento..."):
-            historico_texto = ""
             ultimas_mensagens = st.session_state.mensagens[-5:-1]
             
-            for mensagem in ultimas_mensagens:
-                papel = "Usuário" if mensagem["role"] == "user" else "Assistente"
-                historico_texto += f"{papel}: {mensagem['content']}\n"
-
             if cliente_weaviate:
-                resposta_ia = consultar_base_conhecimento(pergunta, cliente_weaviate, historico_texto)
+                resposta_ia = consultar_base_conhecimento(pergunta, cliente_weaviate)
             else:
                 resposta_ia = "Desculpe, o sistema de arquivos está offline no momento."
             
