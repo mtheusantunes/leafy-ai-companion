@@ -7,7 +7,21 @@
 # It is subject to the license terms in the LICENSE file found in the top-level
 # directory of this distribution. This software is licensed under the GNU GPLv3.
 # -----------------------------------------------------------------------------
+# Docker Compose para a aplicacao RAG (Retrieval-Augmented Generation) do assistente virtual
+#
+# Arquitetura:
+# - Weaviate: banco de dados vetorial para busca semantica de documentos
+# - Ollama: runtime local para modelos de IA (embeddings e geracao de texto)
+# - App: interface Streamlit que orquestra a consulta RAG
+#
+# Perfis GPU disponiveis:
+#   docker compose --profile cpu up       (sem GPU - CPU apenas)
+#   docker compose --profile nvidia up    (GPU Nvidia com CUDA)
+#   docker compose --profile amd up       (GPU AMD com ROCm)
+#
 services:
+  # Servico Weaviate: banco vetorial para armazenar e recuperar documentos
+  # Responsavel pela busca semantica e gerenciamento de embeddings
   weaviate:
     command:
     - --host
@@ -18,32 +32,36 @@ services:
     - http
     image: cr.weaviate.io/semitechnologies/weaviate:1.36.8
     ports:
-    - 8080:8080
-    - 50051:50051
+    - 8080:8080        # Interface HTTP para consultas e gerenciamento
+    - 50051:50051      # Porta gRPC para comunicacao de alto desempenho
     volumes:
-    - weaviate_data:/var/lib/weaviate
-    restart: on-failure:0
+    - weaviate_data:/var/lib/weaviate  # Persistencia de dados entre containers
+    restart: unless-stopped
     environment:
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'  # Desabilita autenticacao para ambiente local
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      ENABLE_MODULES: 'text2vec-ollama,generative-ollama'
+      ENABLE_MODULES: 'text2vec-ollama,generative-ollama'  # Modulos de embeddings e geracao via Ollama
       CLUSTER_HOSTNAME: 'node1'
-      OLLAMA_API_ENDPOINT: 'http://ollama:11434'
+      OLLAMA_API_ENDPOINT: 'http://ollama:11434'  # Endereco para comunicacao com servico Ollama
     networks:
       - rag_network
   
+  # Servico Ollama com otimizacao para CPU
+  # Use este profile para ambientes sem GPU disponivel
   ollama-cpu:
     image: ollama/ollama
     profiles: ["cpu"]
     ports:
-      - "11434:11434"
+      - "11434:11434"  # Porta para API dos modelos de IA
     volumes:
-      - ollama_data:/root/.ollama
+      - ollama_data:/root/.ollama  # Cache de modelos baixados
     networks:
       rag_network:
         aliases:
-          - ollama
+          - ollama  # Nome usado internamente para comunicacao
 
+  # Servico Ollama otimizado para GPU Nvidia (CUDA)
+  # Use este profile se tiver placa Nvidia com suporte CUDA
   ollama-nvidia:
     image: ollama/ollama
     profiles: ["nvidia"]
@@ -63,6 +81,8 @@ services:
         aliases:
           - ollama
 
+  # Servico Ollama otimizado para GPU AMD (ROCm)
+  # Use este profile se tiver placa AMD com suporte ROCm
   ollama-amd:
     image: ollama/ollama:rocm
     profiles: ["amd"]
@@ -78,22 +98,28 @@ services:
         aliases:
           - ollama
 
+  # Servico da aplicacao Streamlit: interface web do assistente virtual
+  # Monta a aplicacao Python e conecta aos servicos de IA e banco vetorial
   app:
-      build: .
+      build: .  # Constroi a imagem usando Dockerfile do projeto
       container_name: app
       ports:
-        - "8501:8501"
+        - "8501:8501"  # Porta do Streamlit (acessivel em http://localhost:8501)
       volumes:
-        - ./:/app
+        - ./:/app  # Monta o diretorio local para recarregar mudancas em tempo real
+        - /app/venv  # Exclui o venv do mount para usar o instalado no container
+        - /app/__pycache__  # Exclui cache de bytecode compilado
       depends_on:
-        - weaviate
+        - weaviate  # Aguarda o Weaviate estar pronto antes de iniciar
       networks:
         - rag_network
   
+# Configuracao de rede para comunicacao entre containers
 networks:
   rag_network:
     driver: bridge
 
+# Volumes persistentes para dados compartilhados entre execucoes
 volumes:
   weaviate_data:
   ollama_data:
