@@ -11,6 +11,7 @@ import streamlit as st
 import weaviate
 from agente_rag import consultar_base_conhecimento
 
+# Configuracoes gerais da pagina Streamlit.
 st.set_page_config(
     page_title="Assistente",
     page_icon="📚",
@@ -30,7 +31,16 @@ st.markdown("""
         """, unsafe_allow_html=True)
 
 @st.cache_resource
-def iniciar_conexao_banco():
+def iniciar_conexao_banco() -> weaviate.WeaviateClient | None:
+    """
+    Inicializa e reutiliza a conexao com o Weaviate durante a sessao.
+
+    O cache de recurso evita reconexoes desnecessarias a cada rerun da pagina,
+    reduzindo latencia e carga no banco vetorial.
+
+    Returns:
+        weaviate.WeaviateClient | None: Cliente conectado ou None em falha.
+    """
     try:
         cliente_weaviate = weaviate.connect_to_custom(
             http_host="weaviate",
@@ -45,32 +55,35 @@ def iniciar_conexao_banco():
         st.error(f"Falha ao conectar no banco de dados vetorial: {e}")
         return None
 
+# Conexao compartilhada para toda a execucao da aplicacao.
 cliente_weaviate = iniciar_conexao_banco()
 
+# Inicializa o historico na primeira carga para manter contexto visual do chat.
 if "mensagens" not in st.session_state:
     st.session_state.mensagens = [
         {"role": "assistant", "content": "Olá! Sou um assistente virtual. Como posso ajudar você hoje?"}
     ]
 
+# Renderiza o historico de mensagens salvo na sessao atual.
 for mensagem in st.session_state.mensagens:
     with st.chat_message(mensagem["role"]):
         st.markdown(mensagem["content"])
 
 if pergunta := st.chat_input("Digite sua pergunta sobre os regulamentos..."):
-    
+    # Registra e exibe imediatamente a pergunta enviada pelo usuario.
     st.session_state.mensagens.append({"role": "user", "content": pergunta})
     with st.chat_message("user"):
         st.markdown(pergunta)
     
     with st.chat_message("assistant"):
         with st.spinner("Consultando a base de conhecimento..."):
-            ultimas_mensagens = st.session_state.mensagens[-5:-1]
-            
             if cliente_weaviate:
+                # Consulta a base de conhecimento via pipeline RAG.
                 resposta_ia = consultar_base_conhecimento(pergunta, cliente_weaviate)
             else:
                 resposta_ia = "Desculpe, o sistema de arquivos está offline no momento."
             
             st.markdown(resposta_ia)
     
+    # Persiste a resposta no historico para renderizacao nos proximos reruns.
     st.session_state.mensagens.append({"role": "assistant", "content": resposta_ia})

@@ -7,20 +7,38 @@
 # It is subject to the license terms in the LICENSE file found in the top-level
 # directory of this distribution. This software is licensed under the GNU GPLv3.
 # -----------------------------------------------------------------------------
-import weaviate
+from typing import Any
 from langchain_ollama import OllamaEmbeddings, ChatOllama
+import weaviate
 from langchain_weaviate import WeaviateVectorStore
+from weaviate import WeaviateClient
+from langchain_core.retrievers import BaseRetriever
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableSerializable
 from langchain_core.output_parsers import StrOutputParser
 
-def _configurar_retriever(cliente_weaviate):
+def _configurar_retriever(cliente_weaviate: WeaviateClient) -> BaseRetriever:
+    """
+    Configura o retriever vetorial.
 
+    Inicializa o modelo de embeddings local (via Ollama), aponta para a
+    coleção Documentos no Weaviate e retorna um retriever com busca
+    limitada aos 4 trechos mais relevantes.
+
+    Args:
+        cliente_weaviate (WeaviateCliente): Cliente ativo do Weaviate já conectado.
+
+    Returns:
+        BaseRetriever: Retriever configurado para consulta semântica.
+    """
+
+    # Define o gerador de embeddings usado na busca por similaridade.
     embeddings = OllamaEmbeddings(
         model="embeddinggemma:300m",
         base_url="http://ollama:11434"
     )
 
+    # Conecta o retriever ao índice vetorial onde os documentos foram salvos.
     vector_store = WeaviateVectorStore(
         client=cliente_weaviate,
         index_name="Documentos",
@@ -30,8 +48,21 @@ def _configurar_retriever(cliente_weaviate):
 
     return vector_store.as_retriever(search_kwargs={"k": 4})
 
-def _criar_cadeia_rag(retriever):
+def _criar_cadeia_rag(retriever: BaseRetriever) -> RunnableSerializable[Any, str]:
+    """
+    Monta a cadeia RAG completa com prompt engineering e parser de saída.
 
+    A cadeia recebe a pergunta do usuário, recupera contexto com o retriever,
+    aplica as regras de conduta no prompt e retorna texto final.
+
+    Args:
+        retriever (BaseRetriever): Retriever previamente configurado para consultar documentos.
+
+    Returns:
+        RunnableSerializable[Any, str]: Pipeline LangChain pronto para invocação com pergunta.
+    """
+
+    # Define o modelo de chat responsável por gerar a resposta final.
     llm = ChatOllama(
         model="llama3.1",
         base_url="http://ollama:11434",
@@ -57,8 +88,10 @@ def _criar_cadeia_rag(retriever):
     ])
     
     def formatar_documentos(docs):
+        """Concatena os trechos recuperados em um único bloco de contexto."""
         return "\n\n---\n\n".join(doc.page_content for doc in docs)
     
+    # Encadeia recuperação de contexto, prompt, LLM e parser de texto.
     rag_chain = (
         {"contexto": retriever | formatar_documentos, "pergunta": RunnablePassthrough()}
         | prompt_final
@@ -68,9 +101,20 @@ def _criar_cadeia_rag(retriever):
     
     return rag_chain
 
-def consultar_base_conhecimento(pergunta: str, cliente_weaviate) -> str:
+def consultar_base_conhecimento(pergunta: str, cliente_weaviate: WeaviateClient) -> str:
+    """
+    Executa a consulta RAG de ponta a ponta para uma pergunta do usuário.
+
+    Args:
+        pergunta (str): Pergunta enviada pelo usuário.
+        cliente_weaviate (WeaviateClient): Cliente ativo do Weaviate já conectado.
+
+    Returns:
+        str: Resposta textual gerada pelo pipeline RAG, ou mensagem de erro.
+    """
     
     try:
+        # Prepara componentes da consulta antes de invocar a cadeia.
         retriever = _configurar_retriever(cliente_weaviate)
         cadeia_rag = _criar_cadeia_rag(retriever)
 
@@ -80,6 +124,7 @@ def consultar_base_conhecimento(pergunta: str, cliente_weaviate) -> str:
         return f"Desculpe, ocorreu um erro interno ao consultar o banco de dados: {e}"
 
 if __name__ == "__main__":
+    # Execucao em modo CLI para testes locais sem interface Streamlit.
     print("Conectando ao banco de dados...")
     cliente_weaviate = weaviate.connect_to_custom(
         http_host="weaviate",
@@ -104,5 +149,6 @@ if __name__ == "__main__":
             print(resposta)
     
     finally:
+        # Garante fechamento da conexao mesmo em interrupcoes durante o loop.
         cliente_weaviate.close()
         print("Conexão com o banco encerrada.")

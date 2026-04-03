@@ -14,11 +14,12 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import weaviate
 from langchain_weaviate import WeaviateVectorStore
+from weaviate import WeaviateClient
 from weaviate.classes.query import Filter
 import os
 import hashlib
 
-def gerar_hash_arquivo(caminho_arquivo):
+def gerar_hash_arquivo(caminho_arquivo: str) -> str:
     """
     Gera uma impressão digital (SHA-256) única para um arquivo PDF.
 
@@ -93,17 +94,17 @@ def processar_documento(caminho_arquivo: str, hash_arquivo: str) -> list[Documen
     print(f"Sucesso! PDF dividido em {len(documentos_seguros)} blocos contextuais seguros.")
     return documentos_seguros
 
-def salvar_documentos(documentos_langchain: list[Document], cliente_weaviate):
+def salvar_documentos(documentos_langchain: list[Document], cliente_weaviate: WeaviateClient) -> None:
     """
     Gera embeddings e persiste documentos no Weaviate.
 
     Usa o modelo local de embeddings via Ollama e grava os vetores na coleção
-    Documentos_CEADi. Em caso de erro, registra a falha sem interromper o
+    Documentos. Em caso de erro, registra a falha sem interromper o
     fechamento da conexão no fluxo principal.
 
     Args:
         documentos_langchain (list[Document]): Documentos a serem vetorizados.
-        cliente_weaviate: Cliente ativo do Weaviate já conectado.
+        cliente_weaviate (WeaviateClient): Cliente ativo do Weaviate já conectado.
 
     Returns:
         None
@@ -149,7 +150,7 @@ if __name__ == "__main__":
     print(f"Encontrados {len(pdfs)} arquivos PDF. Iniciando processamento...")
 
     try:
-        # Conecta ao Weaviate e coleta hashes já cadastrados.
+        # Conecta ao Weaviate
         cliente_weaviate = weaviate.connect_to_custom(
             http_host="weaviate",
             http_port=8080,
@@ -158,7 +159,7 @@ if __name__ == "__main__":
             grpc_port=50051,
             grpc_secure=False
         )
-        
+        # Coleta hashes já cadastrados
         hashes_banco = set()
         if cliente_weaviate.collections.exists("Documentos"):
             colecao = cliente_weaviate.collections.get("Documentos")
@@ -168,6 +169,7 @@ if __name__ == "__main__":
                 for agrupamento in agregacao.groups
             }
 
+            # Remove arquivos do banco que não estiverem na pasta_documentos
             for hash_banco in hashes_banco:
                 if hash_banco not in hashes_pasta:
                     print(f"Removendo arquivo do banco não encontrado na pasta.")
