@@ -77,6 +77,18 @@ services:
       rag_network:
         aliases:
           - ollama
+
+  app:
+      build: .
+      container_name: app
+      ports:
+        - "8501:8501"
+      volumes:
+        - ./:/app
+      depends_on:
+        - weaviate
+      networks:
+        - rag_network
   
 networks:
   rag_network:
