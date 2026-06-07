@@ -102,7 +102,6 @@ services:
   # Monta a aplicacao Python e conecta aos servicos de IA e banco vetorial
   app:
       build: .  # Constroi a imagem usando Dockerfile do projeto
-      container_name: app
       ports:
         - "8501:8501"  # Porta do Streamlit (acessivel em http://localhost:8501)
       volumes:
@@ -113,6 +112,18 @@ services:
         - weaviate  # Aguarda o Weaviate estar pronto antes de iniciar
       networks:
         - rag_network
+  api-mobile:
+    build: .
+    command: uvicorn api_agente:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8001:8000"
+    networks:
+      - rag_network
+    volumes:
+      - .:/app
+    depends_on:
+      - weaviate
+      - ollama-nvidia
   
 # Configuracao de rede para comunicacao entre containers
 networks:
