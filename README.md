@@ -1,4 +1,4 @@
-# ChatRAG - Assistente Virtual
+# Leafy AI Companion - Assistente Virtual
 
 Este projeto implementa uma arquitetura de Geração Aumentada por Recuperação (RAG) para atuar como um assistente virtual com acesso a uma base de conhecimento. A aplicação responde a dúvidas baseando-se estritamente em documentos adicionados à baseada de conhecimento em formato PDF, utilizando processamento de linguagem natural executado 100% localmente.
 
@@ -38,6 +38,7 @@ Com os contêineres rodando, faça o download dos modelos de LLM e de Embeddings
 
 ```bash
 docker compose exec ollama-{seu_profile} ollama pull llama3.1
+ou qwen2.5:1.5b
 docker compose exec ollama-{seu_profile} ollama pull embeddinggemma:300m
 ```
 
@@ -101,3 +102,17 @@ A escolha da *stack* de IA priorizou o equilíbrio entre a qualidade das respost
 *   **Dependência de Hardware Local:** Como todo o processamento de inferência do LLM e a geração de embeddings (via Ollama) rodam localmente, o tempo de resposta do assistente está diretamente limitado à disponibilidade de memória RAM e VRAM (Placa de Vídeo) da máquina hospedeira.
 *   **Tempo de Ingestão de Documentos:** A biblioteca Docling é extremamente precisa para ler estruturas complexas de PDFs, mas seu processamento pode ser significativamente lento em documentos que contenham dezenas ou centenas de páginas, especialmente por estar configurado para usar a CPU para maior compatibilidade.
 *   **Contexto Fixo:** O pipeline do LangChain foi definido com uma restrição da busca vetorial a um número predefinido de trechos (`k=4`). Se a resposta a uma pergunta muito abrangente estiver fragmentada por muitas partes do documento, o assistente pode não recuperar todas as frações necessárias simultaneamente.
+
+---
+
+## 👨‍💻 Author
+
+**Matheus Antunes Freire** 
+* GitHub: [@mtheusantunes](https://github.com/mtheusantunes)
+
+## 📄 License
+
+Copyright (c) 2026 Matheus Antunes Freire. All rights reserved.
+
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. 
+See the [LICENSE](LICENSE) file in the root directory for more details.
