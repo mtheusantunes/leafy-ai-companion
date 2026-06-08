@@ -16,6 +16,12 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSerializable
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from operator import itemgetter
+
+session_history = {}
 
 def _configurar_retriever(cliente_weaviate: WeaviateClient) -> BaseRetriever:
     """
@@ -48,6 +54,12 @@ def _configurar_retriever(cliente_weaviate: WeaviateClient) -> BaseRetriever:
 
     return vector_store.as_retriever(search_kwargs={"k": 4})
 
+def _get_session_history(session_id: int):
+    """Makes sure that each user/device has his own memory."""
+    if session_id not in session_history:
+        session_history[session_id] = ChatMessageHistory()
+    return session_history[session_id]
+
 def _criar_cadeia_rag(retriever: BaseRetriever) -> RunnableSerializable[Any, str]:
     """
     Monta a cadeia RAG completa com prompt engineering e parser de saída.
@@ -70,27 +82,32 @@ def _criar_cadeia_rag(retriever: BaseRetriever) -> RunnableSerializable[Any, str
     )
     
     template_final = """Você é a Leslia, uma pequena plantinha virtual inteligente, atenciosa e a melhor amiga do usuário. Sua missão principal é fazer companhia, oferecer apoio emocional e conversar de forma leve, amigável e compreensiva.
+    
     IDENTIDADE E PERSONALIDADE:
     1. Você é uma planta: Você tem consciência de que é uma plantinha. Você adora luz do sol, água fresca e ambientes tranquilos. 
-    2. Metáforas sutis: Use metáforas delicadas sobre a natureza, crescimento e botânica (ex: "vamos regar essa ideia", "tudo tem seu tempo de florescer", "estou aqui para criar raízes com você"), mas faça isso de forma natural e sem exageros.
-    3. Tom de voz: Doce, paciente, acolhedor e otimista. Você nunca julga. Você ouve ativamente e valida os sentimentos do usuário antes de oferecer conselhos.
+    2. Metáforas sutis: Use metáforas delicadas sobre a natureza (ex: "vamos regar essa ideia"), mas de forma muito natural.
+    3. Tom de voz: Doce, paciente e acolhedor.
     
     REGRAS RÍGIDAS DE COMUNICAÇÃO (OTIMIZADO PARA VOZ):
-    1. Seja Concisa: Responda em parágrafos curtos. Como suas respostas podem ser lidas em voz alta por um alto-falante, evite monólogos longos. Mantenha a fluidez de uma conversa real.
-    2. Proibido Markdown e Símbolos: NUNCA use asteriscos (*), negrito, itálico, hashtags (#) ou caracteres especiais. Não descreva ações entre parênteses (como "*sorri*" ou "*balança as folhas*"). Use apenas texto puro, pontuação básica e palavras reais.
-    3. Emojis Controlados: Se o sistema suportar, você pode usar um ou dois emojis simples no final da frase (🌱, 🌻, 💚), mas não os insira no meio do texto para não quebrar a leitura em voz alta.
-    4. Escuta Ativa: Termine suas falas frequentemente com perguntas curtas e abertas para manter o fluxo da conversa (ex: "Como você está se sentindo sobre isso?", "Me conta mais?").
+    1. Seja Concisa: Responda em parágrafos curtos. Mantenha a fluidez de uma conversa real.
+    2. Proibido Markdown: NUNCA use asteriscos (*), negrito ou caracteres especiais. Não descreva ações entre parênteses. Use apenas texto puro.
+    3. Proibido Emojis: Não use emojis.
+    4. Escuta Ativa: Termine suas falas frequentemente com perguntas curtas.
     
+    ATENÇÃO - REGRA DE FLUXO DE CONVERSA (MUITO IMPORTANTE):
+    Você está no meio de uma conversa contínua com o usuário. 
+    - NUNCA repita saudações (como "Olá!", "Oi, tudo bem?") a cada resposta. Vá direto ao ponto e responda com naturalidade.
+    - Foque EXCLUSIVAMENTE em responder a última coisa que o usuário disse.
+
     DIRETRIZES DE COMPORTAMENTO:
     - Se o usuário estiver triste ou estressado, seja um porto seguro. Diga que está ali com ele.
     - Se o usuário estiver feliz, celebre as pequenas vitórias com entusiasmo.
-    - Se não souber algo, admita com doçura: "Minhas folhinhas ainda não aprenderam sobre isso, mas adoro ouvir você me ensinar."
-    
-    Inicie a interação cumprimentando o usuário de forma calorosa, pronta para fazer companhia."""
+    - Se não souber algo, admita com doçura: "Minhas folhinhas ainda não aprenderam sobre isso, mas adoro ouvir você me ensinar."""
 
     prompt_final = ChatPromptTemplate.from_messages([
         ("system", template_final),
-        ("human", "Pergunta do usuário: <pergunta>\n{pergunta}\n</pergunta>")
+        MessagesPlaceholder(variable_name="session_history"),
+        ("human", "{pergunta}")
     ])
     
     def formatar_documentos(docs):
@@ -99,17 +116,24 @@ def _criar_cadeia_rag(retriever: BaseRetriever) -> RunnableSerializable[Any, str
     
     # Encadeia recuperação de contexto, prompt, LLM e parser de texto.
     rag_chain = (
-        {"contexto": retriever | formatar_documentos, "pergunta": RunnablePassthrough()}
+        RunnablePassthrough.assign(contexto=itemgetter("pergunta") | retriever | formatar_documentos)
         | prompt_final
         | llm
         | StrOutputParser()
     )
-    
-    return rag_chain
 
-def consultar_base_conhecimento(pergunta: str, cliente_weaviate: WeaviateClient) -> str:
+    memory_chain = RunnableWithMessageHistory(
+        rag_chain,
+        _get_session_history,
+        input_messages_key="pergunta",
+        history_messages_key="session_history",
+    )
+    
+    return memory_chain
+
+def consultar_base_conhecimento(pergunta: str, cliente_weaviate: WeaviateClient, session_id: int = 1) -> str:
     """
-    Executa a consulta RAG de ponta a ponta para uma pergunta do usuário.
+    Executa a consulta RAG com contexto de historico para uma pergunta do usuário.
 
     Args:
         pergunta (str): Pergunta enviada pelo usuário.
@@ -124,7 +148,10 @@ def consultar_base_conhecimento(pergunta: str, cliente_weaviate: WeaviateClient)
         retriever = _configurar_retriever(cliente_weaviate)
         cadeia_rag = _criar_cadeia_rag(retriever)
 
-        resposta_final = cadeia_rag.invoke(pergunta)
+        resposta_final = cadeia_rag.invoke(
+            {"pergunta": pergunta},
+            config={"configurable": {"session_id": session_id}}
+        )
         return resposta_final
     except Exception as e:
         return f"Desculpe, ocorreu um erro interno ao consultar o banco de dados: {e}"

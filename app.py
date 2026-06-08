@@ -10,6 +10,7 @@
 import streamlit as st
 import weaviate
 from agente_rag import consultar_base_conhecimento
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 # Configuracoes gerais da pagina Streamlit.
 st.set_page_config(
@@ -74,12 +75,14 @@ if pergunta := st.chat_input("Digite sua pergunta sobre os regulamentos..."):
     st.session_state.mensagens.append({"role": "user", "content": pergunta})
     with st.chat_message("user"):
         st.markdown(pergunta)
+        ctx = get_script_run_ctx()
+        session_id = ctx.session_id if ctx else "3"
     
     with st.chat_message("assistant"):
         with st.spinner("Consultando a base de conhecimento..."):
             if cliente_weaviate:
                 # Consulta a base de conhecimento via pipeline RAG.
-                resposta_ia = consultar_base_conhecimento(pergunta, cliente_weaviate)
+                resposta_ia = consultar_base_conhecimento(pergunta, cliente_weaviate, session_id)
             else:
                 resposta_ia = "Desculpe, o sistema de arquivos está offline no momento."
             

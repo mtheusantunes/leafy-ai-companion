@@ -50,7 +50,7 @@ def receber_audio(req: RequisicaoMobile):
         return "Desculpe, o sistema de arquivos está offline."
     
     # Passa a pergunta do celular para o seu agente RAG
-    resposta_ia = consultar_base_conhecimento(req.texto, cliente_weaviate)
+    resposta_ia = consultar_base_conhecimento(req.texto, cliente_weaviate, session_id=2)
     
     # Devolve APENAS o texto puro, sem metadados JSON!
     return resposta_ia
