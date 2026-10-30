@@ -180,6 +180,7 @@ Ideal para conversar no navegador do seu computador:
 Criada especialmente para receber texto transcrito de áudio ou requisições de outros dispositivos da rede:
 
 * Endpoint: `POST http://localhost:8001/assistente`
+
 * Payload (JSON):
 
   ```json
@@ -187,6 +188,7 @@ Criada especialmente para receber texto transcrito de áudio ou requisições de
     "texto": "Oi Leslia, como você está se sentindo hoje no sol?"
   }
   ```
+
 * Resposta: Texto limpo, sem marcações ou markdown, pronto para ser enviado diretamente para o sintetizador de voz (TTS) do Raspberry Pi.
 
 ### 3. Modo Terminal (CLI)
@@ -199,17 +201,30 @@ docker compose exec app python agente_rag.py
 
 ---
 
-## 🍓 Montando na Plantinha Física (Raspberry Pi)
+## 🍓 Cliente Físico da Plantinha (Raspberry Pi)
 
-Para levar o Leafy para o mundo real em um vasinho inteligente:
+O repositório já conta com o código do cliente dedicado e isolado em [`client/`](file:///home/matheus/dev/ai/leafy-ai-companion/client):
 
-1. **Hardware Recomendado:**
-   - Raspberry Pi 4 ou 5 (4GB ou 8GB).
-   - Microfone USB ou chapéu de áudio (ex: ReSpeaker).
-   - Mini alto-falante amplificado (P2 ou USB).
-   - Vaso de planta com espaço reservado para a eletrônica (ou case 3D acoplado).
-2. **Integração:**
-   - O Raspberry Pi pode rodar um pequeno script cliente que captura a voz (ex: Whisper ou Vosk para Speech-to-Text), faz um `POST` na rota `/assistente` e reproduz o texto de retorno usando um sintetizador de voz leve (como Piper TTS ou espeak-ng).
+1. **Hardware na Plantinha:**
+   - Raspberry Pi 3, 4 ou 5 (rodando Raspberry Pi OS).
+   - Microfone USB ou placa ReSpeaker.
+   - Alto-falante USB ou analógico (P2).
+2. **Como Executar o Cliente no Raspberry Pi:**
+
+   ```bash
+   cd client
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   
+   # Configurar URL da API (ex: IP do servidor onde o Docker está rodando)
+   cp .env.example .env
+   
+   # Iniciar o cliente (escuta o microfone e fala as respostas)
+   python main.py --mode continuous
+   ```
+
+   > Consulte o [client/README.md](file:///home/matheus/dev/ai/leafy-ai-companion/client/README.md) para detalhes de instalação de pacotes de áudio do sistema (`espeak-ng`, `portaudio`) e modos alternativos (`push_to_talk`, `text`, `test`).
 
 ---
 
