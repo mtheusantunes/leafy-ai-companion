@@ -1,0 +1,13 @@
+# Dependências isoladas para o Cliente Raspberry Pi do Leafy AI Companion
+# Estas dependências são leves e NÃO incluem PyTorch, Weaviate ou Docling.
+
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Opcional para áudio real no Raspberry Pi / Linux:
+# Para instalar no Raspberry Pi OS:
+# sudo apt-get install -y portaudio19-dev python3-pyaudio espeak-ng alsa-utils
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.14
+pyttsx3>=2.90
+gTTS>=2.5.0
