@@ -36,7 +36,7 @@ services:
     - 50051:50051      # Porta gRPC para comunicacao de alto desempenho
     volumes:
     - weaviate_data:/var/lib/weaviate  # Persistencia de dados entre containers
-    restart: unless-stopped
+    restart: no 
     environment:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'  # Desabilita autenticacao para ambiente local
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
@@ -109,7 +109,17 @@ services:
         - /app/venv  # Exclui o venv do mount para usar o instalado no container
         - /app/__pycache__  # Exclui cache de bytecode compilado
       depends_on:
-        - weaviate  # Aguarda o Weaviate estar pronto antes de iniciar
+        weaviate:
+          condition: service_started
+        ollama-cpu:
+          condition: service_started
+          required: false
+        ollama-nvidia:
+          condition: service_started
+          required: false
+        ollama-amd:
+          condition: service_started
+          required: false
       networks:
         - rag_network
   api-mobile:
@@ -122,8 +132,17 @@ services:
     volumes:
       - .:/app
     depends_on:
-      - weaviate
-      - ollama-nvidia
+      weaviate:
+        condition: service_started
+      ollama-cpu:
+        condition: service_started
+        required: false
+      ollama-nvidia:
+        condition: service_started
+        required: false
+      ollama-amd:
+        condition: service_started
+        required: false
   
 # Configuracao de rede para comunicacao entre containers
 networks:
